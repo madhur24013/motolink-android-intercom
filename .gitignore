@@ -17,3 +17,4 @@ Project/MotoApp/coverage/
 # IDE files
 Project/MotoApp/.idea/
 Project/MotoApp/*.iml
+**/test_out.png
