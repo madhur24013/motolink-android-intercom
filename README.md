@@ -1,11 +1,16 @@
-# MotoLink
+﻿# MotoLink
 
-MotoLink is a React Native Android intercom app for rider and pillion communication. It uses Bluetooth for discovery and signaling, MMKV for persistence, and WebRTC audio over a shared local Wi-Fi or hotspot.
+MotoLink is a React Native Android Bluetooth intercom app for rider and pillion helmet communication. It uses Bluetooth for discovery and signaling, MMKV for persistence, and WebRTC audio over shared Wi-Fi or hotspot networking.
 
 ## Repository
 
-- Suggested repo name: `motolink-android-intercom`
-- Suggested description: `MotoLink is a React Native Android intercom app for rider and pillion communication using Bluetooth signaling, MMKV persistence, and WebRTC audio.`
+- Repository name: `motolink-android-intercom`
+- GitHub URL: `https://github.com/madhur24013/motolink-android-intercom`
+- Release APK: `https://github.com/madhur24013/motolink-android-intercom/releases/tag/v1.0.0`
+
+## Search Keywords
+
+React Native, Android, Bluetooth intercom, rider pillion communication, motorcycle helmet communication, Bluetooth Classic, BLE, WebRTC audio, MMKV storage, Kotlin audio routing.
 
 ## Package Layout
 
@@ -26,6 +31,7 @@ MotoLink_Complete/
       src/
       package.json
       index.js
+  LICENSE.md
   README.md
   README_STRUCTURE.txt
 ```
@@ -74,6 +80,12 @@ npx react-native run-android
 cd Project/MotoApp/android
 gradlew assembleRelease
 ```
+
+## Copyright
+
+Copyright (c) 2026 Madhur24013. All rights reserved.
+
+This repository is published for showcase, academic reference, and portfolio use. No copying, redistribution, resale, or commercial reuse is permitted without explicit permission from the copyright holder.
 
 ## Notes
 
