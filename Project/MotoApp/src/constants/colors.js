@@ -1,0 +1,18 @@
+﻿export const C = {
+  bg: '#070B12',
+  surface: '#0D1320',
+  surfaceAlt: '#111A2B',
+  border: '#1C2A3E',
+  primary: '#00C8D4',
+  primaryDim: 'rgba(0,200,212,0.12)',
+  secondary: '#FF6B1A',
+  secondaryDim: 'rgba(255,107,26,0.12)',
+  error: '#E53935',
+  errorDim: 'rgba(229,57,53,0.12)',
+  success: '#00E676',
+  successDim: 'rgba(0,230,118,0.12)',
+  warn: '#FFB300',
+  text: '#DDE6F0',
+  textSub: '#8FA5B8',
+  textMuted: '#4E6478',
+};

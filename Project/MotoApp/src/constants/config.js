@@ -1,0 +1,17 @@
+﻿export const BLE_SERVICE_UUID = '8f3f4d10-3e9e-4a2f-8a32-2c4d1cb0a001';
+export const BLE_CHAR_INVITE_UUID = '8f3f4d10-3e9e-4a2f-8a32-2c4d1cb0a101';
+export const BLE_CHAR_STATUS_UUID = '8f3f4d10-3e9e-4a2f-8a32-2c4d1cb0a102';
+export const MOTOLINK_VERSION = '2.0';
+export const SCAN_TIMEOUT_MS = 8000;
+export const RECONNECT_MAX_ATTEMPTS = 5;
+export const RECONNECT_BASE_DELAY_MS = 2000;
+export const CALL_AUTO_MISS_SECONDS = 30;
+export const AUDIO_SAMPLE_RATE = 16000;
+export const AUDIO_CHANNELS = 1;
+export const AUDIO_BITRATE = 32000;
+export const AUDIO_CODEC = 'OPUS';
+export const P2P_PORT = 8088;
+export const LOG_MAX_ENTRIES = 50;
+export const WEBRTC_LOCAL_NETWORK_ONLY = true;
+export const WEBRTC_TRICKLE_ICE = false;
+export const WEBRTC_ICE_GATHER_TIMEOUT_MS = 4000;

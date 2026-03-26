@@ -1,0 +1,19 @@
+# Root package artifacts
+Thumbs.db
+Desktop.ini
+
+# React Native project dependencies and generated output
+Project/MotoApp/node_modules/
+Project/MotoApp/.bundle/
+Project/MotoApp/android/.gradle/
+Project/MotoApp/android/build/
+Project/MotoApp/android/app/build/
+Project/MotoApp/android/local.properties
+Project/MotoApp/android/.cxx/
+Project/MotoApp/ios/build/
+Project/MotoApp/ios/Pods/
+Project/MotoApp/coverage/
+
+# IDE files
+Project/MotoApp/.idea/
+Project/MotoApp/*.iml
