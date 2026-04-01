@@ -1,11 +1,16 @@
-import { BleManager } from 'react-native-ble-plx';
+import {BleManager} from 'react-native-ble-plx';
 import RNBluetoothClassic from 'react-native-bluetooth-classic';
-import { PermissionsAndroid, Platform } from 'react-native';
-import { Buffer } from 'buffer';
-import { BLE_SERVICE_UUID, BLE_CHAR_INVITE_UUID, MOTOLINK_VERSION, SCAN_TIMEOUT_MS } from '../constants/config';
-import { TRANSPORT_STATES } from '../constants/states';
-import { TransportStateManager } from './TransportStateManager';
-import { LogsService } from './LogsService';
+import {PermissionsAndroid, Platform} from 'react-native';
+import {Buffer} from 'buffer';
+import {
+  BLE_SERVICE_UUID,
+  BLE_CHAR_INVITE_UUID,
+  MOTOLINK_VERSION,
+  SCAN_TIMEOUT_MS,
+} from '../constants/config';
+import {TRANSPORT_STATES} from '../constants/states';
+import {TransportStateManager} from './TransportStateManager';
+import {LogsService} from './LogsService';
 
 const manager = new BleManager();
 let scanTimer = null;
@@ -19,6 +24,7 @@ let classicAcceptorEnabled = false;
 let classicAcceptLoopActive = false;
 let classicAcceptDesired = false;
 let classicAcceptRole = 'none';
+let activeConnectionSubscribers = new Set();
 let bleChunkBuffers = new Map();
 let classicLineBuffer = '';
 const CONNECT_TIMEOUT_MS = 20000;
@@ -28,7 +34,7 @@ const CLASSIC_SIGNAL_CHUNK_SIZE = 384;
 const BLE_CHUNK_TTL_MS = 20000;
 const CLASSIC_ACCEPT_OPTIONS = {
   delimiter: '\n',
-  secureSocket: false,
+  secureSocket: true,
   serviceName: 'MotoLink',
   connectionType: 'delimited',
   readSize: 4096,
@@ -37,7 +43,7 @@ const CLASSIC_ACCEPT_OPTIONS = {
 };
 const CLASSIC_CONNECT_OPTIONS = {
   delimiter: '\n',
-  secureSocket: false,
+  secureSocket: true,
   serviceName: 'MotoLink',
   connectionType: 'delimited',
   readSize: 4096,
@@ -48,10 +54,12 @@ const CLASSIC_CONNECT_OPTIONS = {
 const withTimeout = (promise, timeoutMs, message) =>
   Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(message)), timeoutMs),
+    ),
   ]);
 
-const decodeB64 = (value) => {
+const decodeB64 = value => {
   try {
     return JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
   } catch {
@@ -59,12 +67,13 @@ const decodeB64 = (value) => {
   }
 };
 
-const encodeB64 = (value) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const encodeB64 = value =>
+  Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const buildSignalChunks = (payload, chunkSize) => {
   const raw = JSON.stringify(payload);
   if (raw.length <= chunkSize) {
-    return [{ raw }];
+    return [{raw}];
   }
 
   const chunkId = `${payload.sessionId || 'sig'}-${payload.type}-${Date.now()}`;
@@ -84,9 +93,29 @@ const buildSignalChunks = (payload, chunkSize) => {
   }));
 };
 
-const getClassicAddress = (device) => device?.address || device?.id || null;
+const getClassicAddress = device => device?.address || device?.id || null;
 
-const ensureClassicDisconnected = async (address) => {
+const notifyActiveConnectionChanged = (reason = 'update') => {
+  activeConnectionSubscribers.forEach(listener => {
+    try {
+      listener(activeConnection, reason);
+    } catch (error) {
+      LogsService.add(
+        'signal',
+        'Connection Listener Failed',
+        error.message,
+        'ERROR',
+      );
+    }
+  });
+};
+
+const setActiveConnection = (nextConnection, reason = 'update') => {
+  activeConnection = nextConnection || null;
+  notifyActiveConnectionChanged(reason);
+};
+
+const ensureClassicDisconnected = async address => {
   if (!address) {
     return;
   }
@@ -114,7 +143,12 @@ const connectClassicDevice = async (device, reasonLabel) => {
   if (activeConnection?.transport === 'CLASSIC') {
     const activeAddress = getClassicAddress(activeConnection.device);
     if (activeAddress === address) {
-      LogsService.add('classic', 'Classic Reuse', `${reasonLabel} ${address}`, 'REUSE');
+      LogsService.add(
+        'classic',
+        'Classic Reuse',
+        `${reasonLabel} ${address}`,
+        'REUSE',
+      );
       return activeConnection;
     }
     try {
@@ -122,16 +156,27 @@ const connectClassicDevice = async (device, reasonLabel) => {
     } catch {
       // ignore stale socket close failures
     }
-    activeConnection = null;
+    setActiveConnection(null, 'classic_replace');
   }
 
   try {
     const connected = await RNBluetoothClassic.isDeviceConnected(address);
-    if (connected && typeof RNBluetoothClassic.getConnectedDevice === 'function') {
+    if (
+      connected &&
+      typeof RNBluetoothClassic.getConnectedDevice === 'function'
+    ) {
       const existing = await RNBluetoothClassic.getConnectedDevice(address);
-      activeConnection = { transport: 'CLASSIC', device: existing };
+      setActiveConnection(
+        {transport: 'CLASSIC', device: existing},
+        'classic_reuse',
+      );
       classicLineBuffer = '';
-      LogsService.add('classic', 'Classic Existing Link', `${reasonLabel} ${address}`, 'REUSE');
+      LogsService.add(
+        'classic',
+        'Classic Existing Link',
+        `${reasonLabel} ${address}`,
+        'REUSE',
+      );
       return activeConnection;
     }
   } catch {
@@ -151,13 +196,26 @@ const connectClassicDevice = async (device, reasonLabel) => {
       if (typeof connected?.clear === 'function') {
         await connected.clear().catch(() => null);
       }
-      activeConnection = { transport: 'CLASSIC', device: connected };
+      setActiveConnection(
+        {transport: 'CLASSIC', device: connected},
+        'classic_connected',
+      );
       classicLineBuffer = '';
-      LogsService.add('classic', 'Classic Connected', `${reasonLabel} ${address} attempt=${attempt}`, 'CONNECTED');
+      LogsService.add(
+        'classic',
+        'Classic Connected',
+        `${reasonLabel} ${address} attempt=${attempt}`,
+        'CONNECTED',
+      );
       return activeConnection;
     } catch (error) {
       lastError = error;
-      LogsService.add('classic', 'Classic Connect Retry', `${reasonLabel} ${address} attempt=${attempt} ${error.message}`, 'RETRY');
+      LogsService.add(
+        'classic',
+        'Classic Connect Retry',
+        `${reasonLabel} ${address} attempt=${attempt} ${error.message}`,
+        'RETRY',
+      );
       await wait(500 * attempt);
     }
   }
@@ -174,14 +232,19 @@ const cleanupBleChunks = () => {
   });
 };
 
-const prepareBleConnection = async (connection) => {
+const prepareBleConnection = async connection => {
   if (!connection) {
     return connection;
   }
   try {
     if (typeof connection.requestMTU === 'function') {
       await connection.requestMTU(512);
-      LogsService.add('ble', 'MTU Requested', `${connection.id} mtu=512`, 'MTU');
+      LogsService.add(
+        'ble',
+        'MTU Requested',
+        `${connection.id} mtu=512`,
+        'MTU',
+      );
     }
   } catch (error) {
     LogsService.add('ble', 'MTU Request Failed', error.message, 'WARN');
@@ -197,7 +260,11 @@ const emitBlePayload = (payload, onInvite) => {
   if (payload.__mlChunk) {
     cleanupBleChunks();
     const key = payload.id;
-    if (!key || typeof payload.index !== 'number' || typeof payload.total !== 'number') {
+    if (
+      !key ||
+      typeof payload.index !== 'number' ||
+      typeof payload.total !== 'number'
+    ) {
       return;
     }
     const entry = bleChunkBuffers.get(key) || {
@@ -208,7 +275,7 @@ const emitBlePayload = (payload, onInvite) => {
     entry.parts[payload.index] = payload.data || '';
     bleChunkBuffers.set(key, entry);
 
-    const complete = entry.parts.every((part) => typeof part === 'string');
+    const complete = entry.parts.every(part => typeof part === 'string');
     if (!complete) {
       return;
     }
@@ -216,7 +283,12 @@ const emitBlePayload = (payload, onInvite) => {
     bleChunkBuffers.delete(key);
     try {
       const assembled = JSON.parse(entry.parts.join(''));
-      LogsService.add('signal', 'BLE Signal Assembled', assembled.type || 'unknown', 'RX');
+      LogsService.add(
+        'signal',
+        'BLE Signal Assembled',
+        assembled.type || 'unknown',
+        'RX',
+      );
       onInvite && onInvite(assembled);
     } catch (error) {
       LogsService.add('signal', 'BLE Assemble Failed', error.message, 'ERROR');
@@ -229,7 +301,7 @@ const emitBlePayload = (payload, onInvite) => {
 };
 
 const pushDiscovered = (device, onDeviceFound) => {
-  const exists = discovered.some((d) => d.id === device.id);
+  const exists = discovered.some(d => d.id === device.id);
   if (exists) {
     return;
   }
@@ -243,7 +315,9 @@ const hasClassicPermissions = async () => {
     return true;
   }
   try {
-    const connectGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+    const connectGranted = await PermissionsAndroid.check(
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+    );
     return !!connectGranted;
   } catch {
     return false;
@@ -258,7 +332,12 @@ const syncClassicAcceptor = async (reason = 'sync') => {
     if (classicAcceptorEnabled) {
       classicAcceptorEnabled = false;
       await RNBluetoothClassic.cancelAccept().catch(() => null);
-      LogsService.add('classic', 'Acceptor Disabled', `${reason} role=${classicAcceptRole}`, 'STOP');
+      LogsService.add(
+        'classic',
+        'Acceptor Disabled',
+        `${reason} role=${classicAcceptRole}`,
+        'STOP',
+      );
     }
     return;
   }
@@ -268,7 +347,12 @@ const syncClassicAcceptor = async (reason = 'sync') => {
   }
 
   classicAcceptorEnabled = true;
-  LogsService.add('classic', 'Acceptor Enabled', `${reason} role=${classicAcceptRole}`, 'LISTEN');
+  LogsService.add(
+    'classic',
+    'Acceptor Enabled',
+    `${reason} role=${classicAcceptRole}`,
+    'LISTEN',
+  );
   runClassicAcceptLoop();
 };
 
@@ -282,7 +366,12 @@ const stopClassicAcceptor = () => {
   }
   classicAcceptorEnabled = false;
   RNBluetoothClassic.cancelAccept().catch(() => null);
-  LogsService.add('classic', 'Acceptor Disabled', `manual role=${classicAcceptRole}`, 'STOP');
+  LogsService.add(
+    'classic',
+    'Acceptor Disabled',
+    `manual role=${classicAcceptRole}`,
+    'STOP',
+  );
 };
 
 const runClassicAcceptLoop = async () => {
@@ -291,11 +380,16 @@ const runClassicAcceptLoop = async () => {
   }
 
   classicAcceptLoopActive = true;
-  LogsService.add('classic', 'Acceptor Started', 'Waiting for incoming classic links', 'LISTEN');
+  LogsService.add(
+    'classic',
+    'Acceptor Started',
+    'Waiting for incoming classic links',
+    'LISTEN',
+  );
 
   while (classicAcceptorEnabled) {
     if (activeConnection) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 500));
       continue;
     }
     try {
@@ -304,47 +398,85 @@ const runClassicAcceptLoop = async () => {
         break;
       }
 
-      activeConnection = { transport: 'CLASSIC', device: accepted };
+      setActiveConnection(
+        {transport: 'CLASSIC', device: accepted},
+        'classic_accept',
+      );
       TransportStateManager.setState(TRANSPORT_STATES.CONNECTED);
       classicLineBuffer = '';
-      LogsService.add('classic', 'Incoming Connection Accepted', accepted?.address || accepted?.id || 'unknown', 'ACCEPT');
+      LogsService.add(
+        'classic',
+        'Incoming Connection Accepted',
+        accepted?.address || accepted?.id || 'unknown',
+        'ACCEPT',
+      );
     } catch (error) {
       if (classicAcceptorEnabled) {
         LogsService.add('classic', 'Acceptor Error', error.message, 'ERROR');
       }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   classicAcceptLoopActive = false;
-  LogsService.add('classic', 'Acceptor Stopped', 'Classic accept loop exited', 'STOP');
+  LogsService.add(
+    'classic',
+    'Acceptor Stopped',
+    'Classic accept loop exited',
+    'STOP',
+  );
 };
 
 export const BluetoothService = {
   init: () => {
     return new Promise((resolve, reject) => {
-      const sub = manager.onStateChange((state) => {
+      const sub = manager.onStateChange(state => {
         if (state === 'PoweredOn') {
           sub.remove();
-          LogsService.add('ble', 'Bluetooth Ready', 'Bluetooth radio powered on', 'READY');
+          LogsService.add(
+            'ble',
+            'Bluetooth Ready',
+            'Bluetooth radio powered on',
+            'READY',
+          );
           if (!disconnectSubscription) {
-            disconnectSubscription = RNBluetoothClassic.onDeviceDisconnected((event) => {
-              const address = event?.device?.address || event?.address || event?.id;
-              const activeAddress = activeConnection?.device?.address || activeConnection?.device?.id;
-              if (activeConnection?.transport === 'CLASSIC' && address && activeAddress && address === activeAddress) {
-                activeConnection = null;
-                TransportStateManager.setState(TRANSPORT_STATES.DISCONNECTED);
-                LogsService.add('classic', 'Classic Link Lost', address, 'DISCONNECTED');
-                syncClassicAcceptor('disconnect');
-              }
-            });
+            disconnectSubscription = RNBluetoothClassic.onDeviceDisconnected(
+              event => {
+                const address =
+                  event?.device?.address || event?.address || event?.id;
+                const activeAddress =
+                  activeConnection?.device?.address ||
+                  activeConnection?.device?.id;
+                if (
+                  activeConnection?.transport === 'CLASSIC' &&
+                  address &&
+                  activeAddress &&
+                  address === activeAddress
+                ) {
+                  setActiveConnection(null, 'classic_disconnected');
+                  TransportStateManager.setState(TRANSPORT_STATES.DISCONNECTED);
+                  LogsService.add(
+                    'classic',
+                    'Classic Link Lost',
+                    address,
+                    'DISCONNECTED',
+                  );
+                  syncClassicAcceptor('disconnect');
+                }
+              },
+            );
           }
           syncClassicAcceptor('init');
           resolve();
         } else if (state === 'PoweredOff') {
           sub.remove();
-          LogsService.add('ble', 'Bluetooth Off', 'Enable Bluetooth to continue', 'ERROR');
+          LogsService.add(
+            'ble',
+            'Bluetooth Off',
+            'Enable Bluetooth to continue',
+            'ERROR',
+          );
           reject(new Error('Bluetooth is off'));
         }
       }, true);
@@ -354,66 +486,89 @@ export const BluetoothService = {
   startScan: (onDeviceFound, onScanEnd) => {
     discovered = [];
     TransportStateManager.setState(TRANSPORT_STATES.SCANNING);
-    LogsService.add('scan', 'Scan Started', 'Scanning MotoLink BLE service UUID', 'SCAN');
+    LogsService.add(
+      'scan',
+      'Scan Started',
+      'Scanning MotoLink BLE service UUID',
+      'SCAN',
+    );
 
     if (classicDiscoverySubscription?.remove) {
       classicDiscoverySubscription.remove();
       classicDiscoverySubscription = null;
     }
 
-    manager.startDeviceScan([BLE_SERVICE_UUID], { allowDuplicates: false }, (error, device) => {
-      if (error) {
-        LogsService.add('ble', 'BLE Scan Error', error.message, 'ERROR');
-        return;
-      }
-      if (!device) {
-        return;
-      }
+    manager.startDeviceScan(
+      [BLE_SERVICE_UUID],
+      {allowDuplicates: false},
+      (error, device) => {
+        if (error) {
+          LogsService.add('ble', 'BLE Scan Error', error.message, 'ERROR');
+          return;
+        }
+        if (!device) {
+          return;
+        }
 
-      const advertised = Array.isArray(device.serviceUUIDs) && device.serviceUUIDs.includes(BLE_SERVICE_UUID);
-      if (!advertised) {
-        return;
-      }
+        const advertised =
+          Array.isArray(device.serviceUUIDs) &&
+          device.serviceUUIDs.includes(BLE_SERVICE_UUID);
+        if (!advertised) {
+          return;
+        }
 
-      const parsedRole = BluetoothService._parseRoleFromAdvertisement(device);
-      const mlDevice = {
-        id: device.id,
-        name: device.name || device.localName || 'MotoLink Device',
-        address: device.id,
-        rssi: device.rssi,
-        role: parsedRole,
-        type: 'BLE',
-        version: MOTOLINK_VERSION,
-        rawDevice: device,
-      };
+        const parsedRole = BluetoothService._parseRoleFromAdvertisement(device);
+        const mlDevice = {
+          id: device.id,
+          name: device.name || device.localName || 'MotoLink Device',
+          address: device.id,
+          rssi: device.rssi,
+          role: parsedRole,
+          type: 'BLE',
+          version: MOTOLINK_VERSION,
+          rawDevice: device,
+        };
 
-      pushDiscovered(mlDevice, onDeviceFound);
-      LogsService.add('ble', 'BLE Device Found', `${mlDevice.name} (${mlDevice.id})`, 'DISCOVERED');
-    });
+        pushDiscovered(mlDevice, onDeviceFound);
+        LogsService.add(
+          'ble',
+          'BLE Device Found',
+          `${mlDevice.name} (${mlDevice.id})`,
+          'DISCOVERED',
+        );
+      },
+    );
 
     (async () => {
       try {
-        classicDiscoverySubscription = RNBluetoothClassic.onDeviceDiscovered((event) => {
-          const dev = event?.device || event;
-          if (!dev?.address && !dev?.id) {
-            return;
-          }
-          const classic = {
-            id: dev.address || dev.id,
-            name: dev.name || 'Bluetooth Device',
-            address: dev.address || dev.id,
-            rssi: typeof dev.rssi === 'number' ? dev.rssi : null,
-            role: 'unknown',
-            type: 'CLASSIC',
-            version: MOTOLINK_VERSION,
-            rawDevice: dev,
-          };
-          pushDiscovered(classic, onDeviceFound);
-          LogsService.add('classic', 'Classic Device Found', `${classic.name} (${classic.address})`, 'DISCOVERED');
-        });
+        classicDiscoverySubscription = RNBluetoothClassic.onDeviceDiscovered(
+          event => {
+            const dev = event?.device || event;
+            if (!dev?.address && !dev?.id) {
+              return;
+            }
+            const classic = {
+              id: dev.address || dev.id,
+              name: dev.name || 'Bluetooth Device',
+              address: dev.address || dev.id,
+              rssi: typeof dev.rssi === 'number' ? dev.rssi : null,
+              role: 'unknown',
+              type: 'CLASSIC',
+              version: MOTOLINK_VERSION,
+              rawDevice: dev,
+            };
+            pushDiscovered(classic, onDeviceFound);
+            LogsService.add(
+              'classic',
+              'Classic Device Found',
+              `${classic.name} (${classic.address})`,
+              'DISCOVERED',
+            );
+          },
+        );
 
         const bonded = await RNBluetoothClassic.getBondedDevices();
-        bonded.forEach((dev) => {
+        bonded.forEach(dev => {
           const classic = {
             id: dev.address,
             name: dev.name || 'Bluetooth Device',
@@ -426,14 +581,19 @@ export const BluetoothService = {
           };
           pushDiscovered(classic, onDeviceFound);
         });
-        LogsService.add('classic', 'Bonded Loaded', `${bonded.length} bonded devices`, 'DISCOVERED');
+        LogsService.add(
+          'classic',
+          'Bonded Loaded',
+          `${bonded.length} bonded devices`,
+          'DISCOVERED',
+        );
       } catch (error) {
         LogsService.add('classic', 'Bonded Read Error', error.message, 'ERROR');
       }
 
       try {
         const found = await RNBluetoothClassic.startDiscovery();
-        found.forEach((dev) => {
+        found.forEach(dev => {
           const classic = {
             id: dev.address || dev.id,
             name: dev.name || 'Bluetooth Device',
@@ -446,7 +606,12 @@ export const BluetoothService = {
           };
           pushDiscovered(classic, onDeviceFound);
         });
-        LogsService.add('classic', 'Discovery Finished', `${found.length} classic devices`, 'DONE');
+        LogsService.add(
+          'classic',
+          'Discovery Finished',
+          `${found.length} classic devices`,
+          'DONE',
+        );
       } catch (error) {
         LogsService.add('classic', 'Discovery Error', error.message, 'ERROR');
       }
@@ -454,16 +619,21 @@ export const BluetoothService = {
 
     scanTimer = setTimeout(() => {
       BluetoothService.stopScan();
-      LogsService.add('scan', 'Scan Completed', `Found ${discovered.length} devices`, 'DONE');
+      LogsService.add(
+        'scan',
+        'Scan Completed',
+        `Found ${discovered.length} devices`,
+        'DONE',
+      );
       onScanEnd && onScanEnd(null);
     }, SCAN_TIMEOUT_MS);
   },
 
-  watchAdapterState: (onState) => {
+  watchAdapterState: onState => {
     if (adapterWatchSubscription?.remove) {
       adapterWatchSubscription.remove();
     }
-    adapterWatchSubscription = manager.onStateChange((state) => {
+    adapterWatchSubscription = manager.onStateChange(state => {
       onState && onState(state);
     }, true);
 
@@ -491,14 +661,19 @@ export const BluetoothService = {
     }
   },
 
-  connectForPairing: async (device) => {
+  connectForPairing: async device => {
     if (device.type === 'CLASSIC') {
-      LogsService.add('classic', 'Pairing Attempt', `${device.name} (${device.address})`, 'PAIR');
+      LogsService.add(
+        'classic',
+        'Pairing Attempt',
+        `${device.name} (${device.address})`,
+        'PAIR',
+      );
       await withTimeout(
         RNBluetoothClassic.pairDevice(device.address).catch(() => null),
         PAIR_TIMEOUT_MS,
         'Classic pair request timeout',
-      ).catch((error) => {
+      ).catch(error => {
         LogsService.add('classic', 'Pairing Continue', error.message, 'WARN');
       });
 
@@ -509,7 +684,7 @@ export const BluetoothService = {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const connection = await withTimeout(
-          manager.connectToDevice(device.id, { autoConnect: false }),
+          manager.connectToDevice(device.id, {autoConnect: false}),
           CONNECT_TIMEOUT_MS,
           'BLE connection timeout',
         );
@@ -518,23 +693,41 @@ export const BluetoothService = {
           CONNECT_TIMEOUT_MS,
           'BLE service discovery timeout',
         );
-        activeConnection = await prepareBleConnection(connection);
-        LogsService.add('ble', 'Connected For Pairing', `${device.name} (${device.id}) attempt=${attempt}`, 'CONNECTED');
+        setActiveConnection(
+          await prepareBleConnection(connection),
+          'ble_pair_connected',
+        );
+        LogsService.add(
+          'ble',
+          'Connected For Pairing',
+          `${device.name} (${device.id}) attempt=${attempt}`,
+          'CONNECTED',
+        );
         return activeConnection;
       } catch (error) {
         lastError = error;
-        LogsService.add('ble', 'Pairing Connect Retry', `attempt=${attempt} ${error.message}`, 'RETRY');
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        LogsService.add(
+          'ble',
+          'Pairing Connect Retry',
+          `attempt=${attempt} ${error.message}`,
+          'RETRY',
+        );
+        await new Promise(resolve => setTimeout(resolve, 700));
       }
     }
     throw lastError || new Error('BLE pairing failed');
   },
 
-  connectSavedDevice: async (device) => {
+  connectSavedDevice: async device => {
     if (device.type === 'CLASSIC') {
       const connection = await connectClassicDevice(device, 'reconnect');
       TransportStateManager.setState(TRANSPORT_STATES.CONNECTED);
-      LogsService.add('classic', 'Classic Reconnected', `${device.name} (${device.address || device.id})`, 'CONNECTED');
+      LogsService.add(
+        'classic',
+        'Classic Reconnected',
+        `${device.name} (${device.address || device.id})`,
+        'CONNECTED',
+      );
       return connection;
     }
 
@@ -542,7 +735,7 @@ export const BluetoothService = {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const connection = await withTimeout(
-          manager.connectToDevice(device.id, { autoConnect: false }),
+          manager.connectToDevice(device.id, {autoConnect: false}),
           CONNECT_TIMEOUT_MS,
           'BLE reconnect timeout',
         );
@@ -551,20 +744,55 @@ export const BluetoothService = {
           CONNECT_TIMEOUT_MS,
           'BLE reconnect discovery timeout',
         );
-        activeConnection = await prepareBleConnection(connection);
+        setActiveConnection(
+          await prepareBleConnection(connection),
+          'ble_reconnect_connected',
+        );
         TransportStateManager.setState(TRANSPORT_STATES.CONNECTED);
-        LogsService.add('ble', 'Device Connected', `${device.name} (${device.id}) attempt=${attempt}`, 'CONNECTED');
+        LogsService.add(
+          'ble',
+          'Device Connected',
+          `${device.name} (${device.id}) attempt=${attempt}`,
+          'CONNECTED',
+        );
         return activeConnection;
       } catch (error) {
         lastError = error;
-        LogsService.add('ble', 'Reconnect Retry', `attempt=${attempt} ${error.message}`, 'RETRY');
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        LogsService.add(
+          'ble',
+          'Reconnect Retry',
+          `attempt=${attempt} ${error.message}`,
+          'RETRY',
+        );
+        await new Promise(resolve => setTimeout(resolve, 700));
       }
     }
     throw lastError || new Error('BLE reconnect failed');
   },
 
   getActiveConnection: () => activeConnection,
+
+  subscribeActiveConnection: listener => {
+    if (typeof listener !== 'function') {
+      return () => {};
+    }
+
+    activeConnectionSubscribers.add(listener);
+    try {
+      listener(activeConnection, 'subscribe');
+    } catch (error) {
+      LogsService.add(
+        'signal',
+        'Connection Listener Failed',
+        error.message,
+        'ERROR',
+      );
+    }
+
+    return () => {
+      activeConnectionSubscribers.delete(listener);
+    };
+  },
 
   ensureBluetoothEnabled: async () => {
     try {
@@ -576,14 +804,29 @@ export const BluetoothService = {
         const result = await RNBluetoothClassic.requestBluetoothEnabled();
         const ok = result === true || result === 'true';
         if (ok) {
-          LogsService.add('ble', 'Bluetooth Enabled', 'User enabled Bluetooth', 'READY');
+          LogsService.add(
+            'ble',
+            'Bluetooth Enabled',
+            'User enabled Bluetooth',
+            'READY',
+          );
           return true;
         }
       }
-      LogsService.add('ble', 'Bluetooth Still Off', 'User did not enable Bluetooth', 'ERROR');
+      LogsService.add(
+        'ble',
+        'Bluetooth Still Off',
+        'User did not enable Bluetooth',
+        'ERROR',
+      );
       return false;
     } catch (error) {
-      LogsService.add('ble', 'Bluetooth Enable Check Failed', error.message, 'ERROR');
+      LogsService.add(
+        'ble',
+        'Bluetooth Enable Check Failed',
+        error.message,
+        'ERROR',
+      );
       return false;
     }
   },
@@ -596,10 +839,15 @@ export const BluetoothService = {
     stopClassicAcceptor();
   },
 
-  setClassicRole: (role) => {
+  setClassicRole: role => {
     classicAcceptRole = role || 'none';
     classicAcceptDesired = role === 'pillion';
-    LogsService.add('classic', 'Acceptor Role Updated', `role=${classicAcceptRole} listen=${classicAcceptDesired}`, 'ROLE');
+    LogsService.add(
+      'classic',
+      'Acceptor Role Updated',
+      `role=${classicAcceptRole} listen=${classicAcceptDesired}`,
+      'ROLE',
+    );
     if (classicAcceptDesired) {
       syncClassicAcceptor('role');
       return;
@@ -613,11 +861,18 @@ export const BluetoothService = {
       typeof connectedDevice?.onDataReceived === 'function' ||
       typeof connectedDevice?.device?.onDataReceived === 'function'
     ) {
-      const dev = connectedDevice?.device?.write ? connectedDevice.device : connectedDevice;
+      const dev = connectedDevice?.device?.write
+        ? connectedDevice.device
+        : connectedDevice;
       try {
         const chunks = buildSignalChunks(payload, CLASSIC_SIGNAL_CHUNK_SIZE);
         if (chunks.length > 1) {
-          LogsService.add('signal', 'Classic Chunk Send', `${payload.type} parts=${chunks.length}`, 'TX');
+          LogsService.add(
+            'signal',
+            'Classic Chunk Send',
+            `${payload.type} parts=${chunks.length}`,
+            'TX',
+          );
         }
         for (const chunk of chunks) {
           const line = chunk.raw || JSON.stringify(chunk.packet);
@@ -627,7 +882,12 @@ export const BluetoothService = {
           }
         }
       } catch (error) {
-        LogsService.add('classic', 'Classic Write Failed', error.message, 'ERROR');
+        LogsService.add(
+          'classic',
+          'Classic Write Failed',
+          error.message,
+          'ERROR',
+        );
         throw error;
       }
       return;
@@ -643,7 +903,12 @@ export const BluetoothService = {
       return;
     }
 
-    LogsService.add('signal', 'BLE Chunk Send', `${payload.type} parts=${chunks.length}`, 'TX');
+    LogsService.add(
+      'signal',
+      'BLE Chunk Send',
+      `${payload.type} parts=${chunks.length}`,
+      'TX',
+    );
     for (const chunk of chunks) {
       await connectedDevice.writeCharacteristicWithResponseForService(
         BLE_SERVICE_UUID,
@@ -660,13 +925,15 @@ export const BluetoothService = {
       typeof connectedDevice?.onDataReceived === 'function' ||
       typeof connectedDevice?.device?.onDataReceived === 'function'
     ) {
-      const dev = connectedDevice?.device?.onDataReceived ? connectedDevice.device : connectedDevice;
+      const dev = connectedDevice?.device?.onDataReceived
+        ? connectedDevice.device
+        : connectedDevice;
       if (monitorSubscription?.remove) {
         monitorSubscription.remove();
       }
       classicLineBuffer = '';
 
-      monitorSubscription = dev.onDataReceived((event) => {
+      monitorSubscription = dev.onDataReceived(event => {
         const raw = typeof event === 'string' ? event : event?.data || '';
         const text = String(raw || '');
         if (!text) {
@@ -675,8 +942,13 @@ export const BluetoothService = {
 
         try {
           const payload = JSON.parse(text);
-          emitBlePayload(payload, (message) => {
-            LogsService.add('signal', 'Classic Signal', message.type || 'unknown', 'RX');
+          emitBlePayload(payload, message => {
+            LogsService.add(
+              'signal',
+              'Classic Signal',
+              message.type || 'unknown',
+              'RX',
+            );
             onInvite && onInvite(message);
           });
           return;
@@ -688,18 +960,28 @@ export const BluetoothService = {
         const lines = classicLineBuffer.split('\n');
         classicLineBuffer = lines.pop() || '';
 
-        lines.forEach((line) => {
+        lines.forEach(line => {
           if (!line.trim()) {
             return;
           }
           try {
             const payload = JSON.parse(line);
-            emitBlePayload(payload, (message) => {
-              LogsService.add('signal', 'Classic Signal', message.type || 'unknown', 'RX');
+            emitBlePayload(payload, message => {
+              LogsService.add(
+                'signal',
+                'Classic Signal',
+                message.type || 'unknown',
+                'RX',
+              );
               onInvite && onInvite(message);
             });
           } catch {
-            LogsService.add('signal', 'Classic Signal Parse Skipped', 'Partial or malformed packet ignored', 'WARN');
+            LogsService.add(
+              'signal',
+              'Classic Signal Parse Skipped',
+              'Partial or malformed packet ignored',
+              'WARN',
+            );
           }
         });
       });
@@ -724,8 +1006,13 @@ export const BluetoothService = {
       (error, characteristic) => {
         if (error || !characteristic?.value) {
           if (error) {
-            LogsService.add('ble', 'Invite Monitor Error', error.message, 'ERROR');
-            activeConnection = null;
+            LogsService.add(
+              'ble',
+              'Invite Monitor Error',
+              error.message,
+              'ERROR',
+            );
+            setActiveConnection(null, 'ble_monitor_error');
             TransportStateManager.setState(TRANSPORT_STATES.DISCONNECTED);
           }
           return;
@@ -746,7 +1033,7 @@ export const BluetoothService = {
     };
   },
 
-  readRSSI: async (deviceId) => {
+  readRSSI: async deviceId => {
     if (activeConnection?.transport === 'CLASSIC') {
       return null;
     }
@@ -758,7 +1045,7 @@ export const BluetoothService = {
     }
   },
 
-  disconnect: async (deviceId) => {
+  disconnect: async deviceId => {
     try {
       if (activeConnection?.transport === 'CLASSIC') {
         await activeConnection.device.disconnect().catch(() => null);
@@ -767,7 +1054,7 @@ export const BluetoothService = {
       }
       LogsService.add('ble', 'Disconnected', deviceId, 'DISCONNECTED');
     } finally {
-      activeConnection = null;
+      setActiveConnection(null, 'disconnect');
       classicLineBuffer = '';
       if (monitorSubscription?.remove) {
         monitorSubscription.remove();
@@ -798,10 +1085,12 @@ export const BluetoothService = {
     adapterWatchSubscription = null;
     bleChunkBuffers = new Map();
     classicLineBuffer = '';
+    setActiveConnection(null, 'destroy');
+    activeConnectionSubscribers = new Set();
     manager.destroy();
   },
 
-  _parseRoleFromAdvertisement: (device) => {
+  _parseRoleFromAdvertisement: device => {
     if (!device.manufacturerData) {
       return 'unknown';
     }
@@ -813,4 +1102,3 @@ export const BluetoothService = {
     }
   },
 };
-

@@ -1,9 +1,15 @@
-MotoLink Complete Package
+MotoLink Repository Structure
 
-Folder Structure:
-- Project\MotoApp : full React Native Android project
-- APK\MotoLink-app-release.apk : latest release APK
-- Docs\MOTOLINK_COLLEGE_DOCUMENTATION.md : technical documentation
-- Docs\MOTOLINK_FORMAL_REPORT.md : formal college report
-- Docs\MOTOLINK_LOGIC_FLOW.md : project logic and module flow
-- Assets\MotoLink_Logo.png : launcher/logo image source
+Main folders:
+- Project\MotoApp : main React Native app source (Android-focused)
+- Docs\ : privacy policy and technical/academic documentation
+- Assets\ : branding and image assets
+- APK\ : packaged APK outputs (if exported manually)
+
+Important config templates:
+- Project\MotoApp\android\keystore.properties.example
+- Project\MotoApp\android\release-config.properties.example
+
+Local-only secrets (not committed):
+- Project\MotoApp\android\keystore.properties
+- Project\MotoApp\android\release-config.properties

@@ -1,15 +1,21 @@
-﻿import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, BackHandler } from 'react-native';
-import { C } from '../constants/colors';
+﻿import React, {useEffect, useState} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  BackHandler,
+} from 'react-native';
+import {C} from '../constants/colors';
 import AppHeader from '../components/AppHeader';
-import { PairingService } from '../services/PairingService';
-import { CallService } from '../services/CallService';
-import { TransportStateManager } from '../services/TransportStateManager';
-import { TRANSPORT_STATES } from '../constants/states';
-import { LogsService } from '../services/LogsService';
+import {PairingService} from '../services/PairingService';
+import {CallService} from '../services/CallService';
+import {TransportStateManager} from '../services/TransportStateManager';
+import {TRANSPORT_STATES} from '../constants/states';
+import {LogsService} from '../services/LogsService';
 
-export default function PairingScreen({ navigation, route }) {
-  const { device } = route.params;
+export default function PairingScreen({navigation, route}) {
+  const {device} = route.params;
   const [steps, setSteps] = useState([]);
   const [failed, setFailed] = useState(false);
 
@@ -22,17 +28,22 @@ export default function PairingScreen({ navigation, route }) {
           if (!mounted) {
             return;
           }
-          setSteps((prev) => [...prev, msg]);
+          setSteps(prev => [...prev, msg]);
         });
         if (!mounted) {
           return;
         }
         CallService.setSignalingChannel(result.channel, result.pairedDevice);
         TransportStateManager.setState(TRANSPORT_STATES.CONNECTED);
-        LogsService.add('pairing', 'Navigate Home', result.pairedDevice.name, 'NAV');
+        LogsService.add(
+          'pairing',
+          'Navigate Home',
+          result.pairedDevice.name,
+          'NAV',
+        );
         navigation.reset({
           index: 0,
-          routes: [{ name: 'Home' }],
+          routes: [{name: 'Home'}],
         });
       } catch (error) {
         if (!mounted) {
@@ -40,13 +51,14 @@ export default function PairingScreen({ navigation, route }) {
         }
         setFailed(true);
         LogsService.add('pairing', 'Pairing Failed', error.message, 'ERROR');
-        setSteps((prev) => [...prev, `Failed: ${error.message}`]);
+        setSteps(prev => [...prev, `Failed: ${error.message}`]);
       }
     };
 
     run();
     const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
       LogsService.add('pairing', 'Back Press', 'User returned to scan', 'BACK');
+      PairingService.cancelPairing('hardware_back').catch(() => null);
       navigation.replace('Scan');
       return true;
     });
@@ -59,7 +71,15 @@ export default function PairingScreen({ navigation, route }) {
 
   return (
     <View style={styles.root}>
-      <AppHeader title="Pairing" subtitle={device.name} leftLabel="Back" onLeftPress={() => navigation.replace('Scan')} />
+      <AppHeader
+        title="Pairing"
+        subtitle={device.name}
+        leftLabel="Back"
+        onLeftPress={() => {
+          PairingService.cancelPairing('header_back').catch(() => null);
+          navigation.replace('Scan');
+        }}
+      />
       <View style={styles.content}>
         {steps.map((s, i) => (
           <View key={`${s}-${i}`} style={styles.stepRow}>
@@ -68,7 +88,9 @@ export default function PairingScreen({ navigation, route }) {
           </View>
         ))}
         {(failed || steps.length > 0) && (
-          <TouchableOpacity style={styles.retryBtn} onPress={() => navigation.replace('Scan')}>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => navigation.replace('Scan')}>
             <Text style={styles.retryTxt}>Back To Scan</Text>
           </TouchableOpacity>
         )}
@@ -78,8 +100,8 @@ export default function PairingScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  content: { padding: 16, gap: 10 },
+  root: {flex: 1, backgroundColor: C.bg},
+  content: {padding: 16, gap: 10},
   stepRow: {
     flexDirection: 'row',
     gap: 10,
@@ -90,8 +112,8 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
   },
-  dot: { color: C.primary, fontSize: 18, fontWeight: '900' },
-  step: { color: C.textSub, flex: 1 },
+  dot: {color: C.primary, fontSize: 18, fontWeight: '900'},
+  step: {color: C.textSub, flex: 1},
   retryBtn: {
     marginTop: 14,
     borderWidth: 1,
@@ -100,5 +122,5 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: 'center',
   },
-  retryTxt: { color: C.warn, fontWeight: '800' },
+  retryTxt: {color: C.warn, fontWeight: '800'},
 });

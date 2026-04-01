@@ -1,94 +1,94 @@
-﻿# MotoLink
+# MotoLink Android Intercom
 
-MotoLink is a React Native Android Bluetooth intercom app for rider and pillion helmet communication. It uses Bluetooth for discovery and signaling, MMKV for persistence, and WebRTC audio over shared Wi-Fi or hotspot networking.
+MotoLink is a React Native Android intercom app for rider and pillion communication on two phones.
+The app uses Bluetooth for discovery/signaling and WebRTC for live audio.
 
-## Repository
+## Current Status
 
-- Repository name: `motolink-android-intercom`
-- GitHub URL: `https://github.com/madhur24013/motolink-android-intercom`
-- Release APK: `https://github.com/madhur24013/motolink-android-intercom/releases/tag/v1.0.0`
+- Platform target: Android
+- Stage: Late MVP / release candidate
+- iOS support: Not verified in this repository
+- Release output verified locally: APK + AAB
 
-## Search Keywords
+## Core Features
 
-React Native, Android, Bluetooth intercom, rider pillion communication, motorcycle helmet communication, Bluetooth Classic, BLE, WebRTC audio, MMKV storage, Kotlin audio routing.
+1. Rider and pillion role selection flow
+2. Bluetooth device scan, pair, reconnect
+3. WebRTC audio call flow with in-call controls
+4. Pair trust validation and re-pair recovery
+5. Persistent storage for settings/device/session state
+6. Runtime support/privacy links in app settings
+7. Release build guards for signing and runtime config
 
-## Package Layout
+## Tech Stack
+
+- React Native 0.73
+- React Navigation
+- `react-native-bluetooth-classic`
+- `react-native-ble-plx`
+- `react-native-webrtc`
+- `react-native-mmkv`
+- Android Kotlin native modules
+
+## Repository Layout
 
 ```text
-MotoLink_Complete/
-  APK/
-    MotoLink-app-release.apk
-  Assets/
-    MotoLink_Logo.png
-  Docs/
-    MOTOLINK_COLLEGE_DOCUMENTATION.md
-    MOTOLINK_FORMAL_REPORT.md
-    MOTOLINK_LOGIC_FLOW.md
+motolink-android-intercom/
+  APK/                     # release artifacts (when exported)
+  Assets/                  # branding assets
+  Docs/                    # privacy and project documentation
   Project/
-    MotoApp/
+    MotoApp/               # main React Native app
       android/
       ios/
       src/
-      package.json
-      index.js
   LICENSE.md
   README.md
   README_STRUCTURE.txt
 ```
 
-## Features
-
-1. Rider and pillion role selection
-2. Bluetooth device discovery and pairing
-3. Bluetooth signaling for call control
-4. WebRTC audio calling on shared network
-5. MMKV storage for role, paired device, settings, and logs
-6. In-call controls for mute, speaker, earpiece, and push-to-talk
-7. Reconnect flow for dropped transport sessions
-8. Separate academic and technical documentation
-
-## Stack
-
-1. React Native
-2. React Navigation
-3. `react-native-bluetooth-classic`
-4. `react-native-ble-plx`
-5. `react-native-webrtc`
-6. `react-native-mmkv`
-7. Kotlin Android native module for audio routing
-
-## Key Paths
-
-1. App source: `Project/MotoApp`
-2. Release APK: `APK/MotoLink-app-release.apk`
-3. Technical documentation: `Docs/MOTOLINK_COLLEGE_DOCUMENTATION.md`
-4. Formal report: `Docs/MOTOLINK_FORMAL_REPORT.md`
-5. Logic flow: `Docs/MOTOLINK_LOGIC_FLOW.md`
-6. Logo asset: `Assets/MotoLink_Logo.png`
-
-## Local Setup
+## Quick Start
 
 ```bash
 cd Project/MotoApp
-npm install
-npx react-native run-android
+npm ci
+npm run android
 ```
 
-## Build Release APK
+## Release Build (Windows-safe)
 
 ```bash
-cd Project/MotoApp/android
-gradlew assembleRelease
+cd Project/MotoApp
+npm run android:build-safe
+powershell -ExecutionPolicy Bypass -File .\scripts\build-android.ps1 -Task :app:assembleRelease
+powershell -ExecutionPolicy Bypass -File .\scripts\build-android.ps1 -Task :app:bundleRelease
 ```
 
-## Copyright
+Release outputs:
 
-Copyright (c) 2026 Madhur24013. All rights reserved.
+- `Project/MotoApp/android/app/build/outputs/apk/release/app-release.apk`
+- `Project/MotoApp/android/app/build/outputs/bundle/release/app-release.aab`
 
-This repository is published for showcase, academic reference, and portfolio use. No copying, redistribution, resale, or commercial reuse is permitted without explicit permission from the copyright holder.
+## Required Local Release Config
 
-## Notes
+Do not commit secrets. Configure locally in:
 
-1. The packaged source tree contains the full React Native project.
-2. The APK is included separately for direct installation.
-3. Documentation is split so the repository can be used for both development and academic submission.
+- `Project/MotoApp/android/keystore.properties`
+- `Project/MotoApp/android/release-config.properties`
+
+Use examples:
+
+- `Project/MotoApp/android/keystore.properties.example`
+- `Project/MotoApp/android/release-config.properties.example`
+
+## Documentation
+
+- `Docs/PRIVACY_POLICY.md`
+- `Docs/MOTOLINK_LOGIC_FLOW.md`
+- `Docs/MOTOLINK_COLLEGE_DOCUMENTATION.md`
+- `Docs/MOTOLINK_FORMAL_REPORT.md`
+
+## License
+
+See `LICENSE.md`.
+This repository is published for showcase, academic reference, and evaluation use.

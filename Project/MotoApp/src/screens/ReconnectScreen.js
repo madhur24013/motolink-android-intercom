@@ -55,6 +55,29 @@ export default function ReconnectScreen({ navigation }) {
           });
         },
         onFailed: () => {
+          const rePairNotice = Storage.getRePairRequired();
+          if (rePairNotice) {
+            setStatus('Re-pair required.');
+            Alert.alert(
+              'Re-pair Required',
+              'This device needs to be paired again before MotoLink can reconnect.',
+              [
+                {
+                  text: 'Open Scan',
+                  onPress: () => {
+                    PairingService.forgetDevice();
+                    Storage.clearRePairRequired();
+                    navigation.reset({
+                      index: 0,
+                      routes: [{ name: 'Scan' }],
+                    });
+                  },
+                },
+              ],
+            );
+            return;
+          }
+
           setStatus('Reconnect failed. Returning home.');
           Alert.alert('Reconnect Failed', 'Could not restore link. Please scan and pair again.');
           navigation.reset({

@@ -1,0 +1,5 @@
+turnUrls=turns:turn.yourdomain.com:5349
+turnUsername=motolink_turn_user
+turnCredential=replace-with-production-secret
+supportEmail=haryanmadhur@gmail.com
+privacyPolicyUrl=https://github.com/madhur24013/motolink-android-intercom/blob/main/Docs/PRIVACY_POLICY.md
