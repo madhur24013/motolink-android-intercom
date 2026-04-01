@@ -13,3 +13,5 @@ Important config templates:
 Local-only secrets (not committed):
 - Project\MotoApp\android\keystore.properties
 - Project\MotoApp\android\release-config.properties
+
+Last refreshed: April 1, 2026

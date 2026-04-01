@@ -68,3 +68,5 @@ Important: never commit real passwords, TURN secrets, or private credentials.
 
 - Android is the primary verified runtime in this repository.
 - Keep support/privacy text aligned with actual app behavior.
+
+Last refreshed: April 1, 2026
