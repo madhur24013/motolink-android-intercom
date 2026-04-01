@@ -1,6 +1,7 @@
 # MotoLink Privacy Policy
 
 Last updated: April 1, 2026
+Version: 1.1
 
 MotoLink is a rider/pillion intercom app. This app does not require account sign-in and does not run a central user-profile backend.
 
